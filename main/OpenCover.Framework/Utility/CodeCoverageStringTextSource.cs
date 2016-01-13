@@ -204,8 +204,6 @@ namespace OpenCover.Framework.Utility
             if ( LineNo > 0 && LineNo <= lines.Length ) {
                 lineInfo lineInfo = lines[LineNo-1];
                 retString = textSource.Substring(lineInfo.Offset, lineInfo.Length);
-            } else {
-                //Debug.Fail( "Line number out of range" );
             }
 
             return retString;
@@ -219,25 +217,22 @@ namespace OpenCover.Framework.Utility
         public static CodeCoverageStringTextSource GetSource(string filename) {
 
             var retSource = new CodeCoverageStringTextSource (string.Empty);
-            if (System.IO.File.Exists(filename)) {
-                try {
-                    using (Stream stream = new FileStream(filename, FileMode.Open, FileAccess.Read)) {
-                        try {
-                            stream.Position = 0;
-                            using (var reader = new StreamReader (stream, Encoding.Default, true)) {
-                                retSource = new CodeCoverageStringTextSource(reader.ReadToEnd());
-                                switch (Path.GetExtension(filename).ToLowerInvariant()) {
-                                    case ".cs":
-                                        retSource.FileType = FileType.CSharp;
-                                        break;
-                                    default:
-                                        retSource.FileType = FileType.Unsupported;
-                                        break;
-                                }
-                            }
-                        } catch {}
+            try {
+                using (Stream stream = new FileStream(filename, FileMode.Open, FileAccess.Read))
+                using (var reader = new StreamReader (stream, Encoding.Default, true)) {
+                    stream.Position = 0;
+                    retSource = new CodeCoverageStringTextSource(reader.ReadToEnd());
+                    switch (Path.GetExtension(filename).ToLowerInvariant()) {
+                        case ".cs":
+                            retSource.FileType = FileType.CSharp;
+                            break;
+                        default:
+                            retSource.FileType = FileType.Unsupported;
+                            break;
                     }
-                } catch {}
+                }
+            } catch (Exception e) {
+                LogHelper.InformUser(e);
             }
             return retSource;
         }
