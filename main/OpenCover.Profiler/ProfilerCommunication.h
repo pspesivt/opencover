@@ -46,7 +46,9 @@ public:
 private:
     void AddVisitPointToBuffer(ULONG uniqueId, MSG_IdType msgType);
     void SendVisitPoints();
+    void SendVisitPointsInternal();
     void SendThreadVisitPoints(MSG_SendVisitPoints_Request* pVisitPoints);
+    void SendThreadVisitPointsInternal(MSG_SendVisitPoints_Request* pVisitPoints);
     bool GetSequencePoints(mdToken functionToken, WCHAR* pModulePath, WCHAR* pAssemblyName, std::vector<SequencePoint> &points);
     bool GetBranchPoints(mdToken functionToken, WCHAR* pModulePath, WCHAR* pAssemblyName, std::vector<BranchPoint> &points);
     void SendRemainingThreadBuffers();
@@ -104,14 +106,14 @@ private:
     MSG_SendVisitPoints_Request* GetVisitMapForOSThread(ULONG osThread);
 
 private:
-    void report_runtime(const std::runtime_error& re, const tstring &msg);
-    void report_exception(const std::exception& re, const tstring &msg);
+    void report_runtime(const std::runtime_error& re, const tstring &msg) const;
+    void report_exception(const std::exception& re, const tstring &msg) const;
 
     template<class Action>
     void handle_exception(Action action, const tstring& message);
 
     template<class Action>
-    void handle_sehexception(Action action, const tstring& message);
+    void static handle_sehexception(Action action, const tstring& message);
 
 private:
   
@@ -122,8 +124,8 @@ private:
     public:
 		CommunicationException(DWORD reason, DWORD timeout) {dwReason = reason; dwTimeout = timeout;}
 
-        DWORD getReason() {return dwReason;}
-        DWORD getTimeout() {return dwTimeout;}
+        DWORD getReason() const {return dwReason;}
+        DWORD getTimeout() const {return dwTimeout;}
     };
 
 };

@@ -25,6 +25,8 @@ ProfilerCommunication::ProfilerCommunication(DWORD short_wait)
     _hostCommunicationActive = false;
     _short_wait = short_wait;
     ATLASSERT(MAX_MSG_SIZE >= sizeof(MSG_Union));
+    ATLASSERT(MAX_MSG_SIZE >= sizeof(MSG_SendVisitPoints_Request));
+    ATLTRACE(_T("Buffer %d, Union %ld, Visit %ld"), MAX_MSG_SIZE, sizeof(MSG_Union), sizeof(MSG_SendVisitPoints_Request));
 }
 
 ProfilerCommunication::~ProfilerCommunication()
@@ -252,20 +254,25 @@ void ProfilerCommunication::AddVisitPointToThreadBuffer(ULONG uniqueId, MSG_IdTy
 void ProfilerCommunication::SendThreadVisitPoints(MSG_SendVisitPoints_Request* pVisitPoints){
     ATL::CComCritSecLock<ATL::CComAutoCriticalSection> lock(_critResults);
 
+    SendThreadVisitPointsInternal(pVisitPoints);
+
+    pVisitPoints->count = 0;
+}
+
+void ProfilerCommunication::SendThreadVisitPointsInternal(MSG_SendVisitPoints_Request* pVisitPoints) {
+    ATL::CComCritSecLock<ATL::CComAutoCriticalSection> lock(_critResults);
+
     if (!_hostCommunicationActive)
         return;
 
     if (!TestSemaphore(_semapore_results))
         return;
 
-    handle_exception([=](){
+    handle_exception([=]() {
         memcpy(_pVisitPoints, pVisitPoints, sizeof(MSG_SendVisitPoints_Request));
     }, _T("SendThreadVisitPoints"));
 
-    pVisitPoints->count = 0;
     SendVisitPoints();
-    //::ZeroMemory(_pVisitPoints, sizeof(MSG_SendVisitPoints_Request));
-    _pVisitPoints->count = 0;
 }
 
 void ProfilerCommunication::AddVisitPointToBuffer(ULONG uniqueId, MSG_IdType msgType)
@@ -285,26 +292,31 @@ void ProfilerCommunication::AddVisitPointToBuffer(ULONG uniqueId, MSG_IdType msg
     if (++_pVisitPoints->count == VP_BUFFER_SIZE)
     {
         SendVisitPoints();
-        //::ZeroMemory(_pVisitPoints, sizeof(MSG_SendVisitPoints_Request));
-        handle_exception([=](){
-            _pVisitPoints->count = 0;
-        }, _T("AddVisitPointToBuffer"));
     }
 }
 
 void ProfilerCommunication::SendVisitPoints()
 {
-    if (!_hostCommunicationActive) 
+    SendVisitPointsInternal();
+    handle_exception([=]() {
+        _pVisitPoints->count = 0;
+    }, _T("SendVisitPoints"));
+}
+
+void ProfilerCommunication::SendVisitPointsInternal() {
+    if (!_hostCommunicationActive)
         return;
     try {
         _memoryResults.FlushViewOfFile();
 
         DWORD dwSignal = _eventProfilerHasResults.SignalAndWait(_eventResultsHaveBeenReceived, _short_wait);
-        if (WAIT_OBJECT_0 != dwSignal) throw CommunicationException(dwSignal, _short_wait);
+        if (WAIT_OBJECT_0 != dwSignal) 
+			throw CommunicationException(dwSignal, _short_wait);
         _eventResultsHaveBeenReceived.Reset();
-    } catch (CommunicationException ex) {
-        RELTRACE(_T("ProfilerCommunication::SendVisitPoints() => Communication (Results channel) with host has failed (0x%x, %d)"), 
-			ex.getReason(), ex.getTimeout());
+    }
+    catch (const CommunicationException& ex) {
+        RELTRACE(_T("ProfilerCommunication::SendVisitPoints() => Communication (Results channel) with host has failed (0x%x, %d)"),
+            ex.getReason(), ex.getTimeout());
         _hostCommunicationActive = false;
     }
     return;
@@ -546,12 +558,12 @@ bool ProfilerCommunication::TrackProcess(){
     return response;
 }
 
-void ProfilerCommunication::report_runtime(const std::runtime_error& re, const tstring &msg){
+void ProfilerCommunication::report_runtime(const std::runtime_error& re, const tstring &msg) const {
     USES_CONVERSION;
     RELTRACE(_T("Runtime error: %s - %s"), msg.c_str(), A2T(re.what()));
 }
 
-void ProfilerCommunication::report_exception(const std::exception& re, const tstring &msg){
+void ProfilerCommunication::report_exception(const std::exception& re, const tstring &msg) const {
     USES_CONVERSION;
     RELTRACE(_T("Error occurred: %s - %s"), msg.c_str(), A2T(re.what()));
 }
@@ -626,14 +638,15 @@ void ProfilerCommunication::RequestInformation(BR buildRequest, PR processResult
             if (hasMore)
             {
                 dwSignal = _eventInformationReadByProfiler.SignalAndWait(_eventInformationReadyForProfiler, _short_wait);
-                if (WAIT_OBJECT_0 != dwSignal) throw CommunicationException(dwSignal, _short_wait);
+                if (WAIT_OBJECT_0 != dwSignal) 
+					throw CommunicationException(dwSignal, _short_wait);
             
                 _eventInformationReadyForProfiler.Reset();
             }
         }while (hasMore);
 
         _eventInformationReadByProfiler.Set();
-    } catch (CommunicationException ex) {
+    } catch (const CommunicationException& ex) {
         RELTRACE(_T("ProfilerCommunication::RequestInformation(...) => Communication (Chat channel - %s) with host has failed (0x%x, %d)"),  
 			message.c_str(), ex.getReason(), ex.getTimeout());
         _hostCommunicationActive = false;

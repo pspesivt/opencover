@@ -39,16 +39,21 @@ namespace OpenCover.Framework.Manager
 
         private ConcurrentQueue<byte[]> _messageQueue;
 
-        private readonly object syncRoot = new object ();
+        private readonly object _syncRoot = new object ();
 
         /// <summary>
         /// Syncronisation Root
         /// </summary>
         public object SyncRoot {
             get {
-                return syncRoot;
+                return _syncRoot;
             }
         }
+
+        /// <summary>
+        /// wait for how long
+        /// </summary>
+        internal static int BufferWaitCount { get; set; }
 
         private static readonly ILog DebugLogger = LogManager.GetLogger("DebugLogger");
 
@@ -126,10 +131,11 @@ namespace OpenCover.Framework.Manager
                 {
                     process(dictionary =>
                     {
-                        if (dictionary == null) return;
-                        SetProfilerAttributesOnDictionary(profilerKey, profilerNamespace, dictionary);
-
-                        environmentKeyRead.Set();
+                        if (dictionary != null)
+                        {
+                            SetProfilerAttributesOnDictionary(profilerKey, profilerNamespace, dictionary);
+                            environmentKeyRead.Set();
+                        }
                     });
                 }
                 finally
@@ -148,6 +154,8 @@ namespace OpenCover.Framework.Manager
 
             if (_commandLine.TraceByTest)
                 dictionary[@"OpenCover_Profiler_TraceByTest"] = "1";
+            if (_commandLine.SafeMode)
+                dictionary[@"OpenCover_Profiler_SafeMode"] = "1";
 
             dictionary["Cor_Profiler"] = ProfilerGuid;
             dictionary["Cor_Enable_Profiling"] = "1";
@@ -191,12 +199,12 @@ namespace OpenCover.Framework.Manager
             };
         }
 
-        /// <summary>
-        /// wait for how long
-        /// </summary>
-        internal static int BufferWaitCount = 30;
-
         private bool _continueWait = true;
+
+        static ProfilerManager()
+        {
+            BufferWaitCount = 30;
+        }
 
         private void ProcessMessages(WaitHandle[] handles)
         {
@@ -219,27 +227,14 @@ namespace OpenCover.Framework.Manager
                                 }
                             }));
                         break;
+                    default:
+                        break;
                 }
             } while (_continueWait);
 
-            // we need to let the profilers dump the thread buffers over before they close - max 15s (ish)
-            var i = 0;
-            while (i < BufferWaitCount && _memoryManager.GetBlocks.Any(b => b.Active))
-            {
-                DebugLogger.InfoFormat("Waiting for {0} processes to close",
-                    _memoryManager.GetBlocks.Count(b => b.Active));
-                Thread.Sleep(500);
-                i++;
-            }
+            _memoryManager.WaitForBlocksToClose(BufferWaitCount);
 
-            // grab anything left in the main buffers
-            foreach (var block in _memoryManager.GetBlocks.Where(b => b.Active).Select(b => b.MemoryBlock))
-            {
-                var data = new byte[block.BufferSize];
-                block.StreamAccessorResults.Seek(0, SeekOrigin.Begin);
-                block.StreamAccessorResults.Read(data, 0, block.BufferSize);
-                _messageQueue.Enqueue(data);
-            }
+            _memoryManager.FetchRemainingBufferData(data => _messageQueue.Enqueue(data));
 
             lock (SyncRoot)
             {
@@ -335,7 +330,7 @@ namespace OpenCover.Framework.Manager
                                         } while (_messageQueue.Count > 200);
                                     }
                                     break;
-                                case 2:
+                                default: // 2
                                     return;
                             }
                         }

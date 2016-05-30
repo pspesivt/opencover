@@ -11,9 +11,13 @@ namespace OpenCover.Framework.Communication
     /// The command supportd by the host
     /// </summary>
     // ReSharper disable InconsistentNaming
-    // ReSharper disable once EnumUnderlyingTypeIsInt
-    public enum MSG_Type : int
+    public enum MSG_Type 
     {
+        /// <summary>
+        /// This message is unknown of course
+        /// </summary>
+        MSG_Unknown = -1,
+
         /// <summary>
         /// Does this assembly have any code that can be covered
         /// </summary>
@@ -96,7 +100,7 @@ namespace OpenCover.Framework.Communication
         /// The path to the process
         /// </summary>
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 512)]
-        public string processName;
+        public string processPath;
 
         /// <summary>
         /// The path to the module/assembly
@@ -144,7 +148,7 @@ namespace OpenCover.Framework.Communication
         /// The path to the process
         /// </summary>
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 512)]
-        public string processName;
+        public string processPath;
 
         /// <summary>
         /// The path to the module hosting the emthod
@@ -214,7 +218,7 @@ namespace OpenCover.Framework.Communication
         /// The path to the process
         /// </summary>
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 512)]
-        public string processName;
+        public string processPath;
 
         /// <summary>
         /// The path to the module hosting the emthod
@@ -396,7 +400,7 @@ namespace OpenCover.Framework.Communication
         /// The path to the process
         /// </summary>
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 512)]
-        public string processName;
+        public string processPath;
     }
 
     /// <summary>

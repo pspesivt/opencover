@@ -108,6 +108,8 @@ namespace OpenCover.Framework.Communication
                 case MSG_Type.MSG_TrackProcess:
                     writeSize = HandleTrackProcessMessage(pinnedMemory);
                     break;
+                default:
+                    throw new InvalidOperationException();
 
             }
             return writeSize;                
@@ -121,7 +123,7 @@ namespace OpenCover.Framework.Communication
             {
                 var request = _marshalWrapper.PtrToStructure<MSG_GetSequencePoints_Request>(pinnedMemory);
                 InstrumentationPoint[] origPoints;
-                _profilerCommunication.GetSequencePoints(request.processName, request.modulePath, request.assemblyName,
+                _profilerCommunication.GetSequencePoints(request.processPath, request.modulePath, request.assemblyName,
                     request.functionToken, out origPoints);
                 var num = origPoints.Maybe(o => o.Length);
 
@@ -153,7 +155,7 @@ namespace OpenCover.Framework.Communication
             }
             catch (Exception ex)
             {
-                DebugLogger.ErrorFormat("HandleGetSequencePointsMessage => {0}:{1}", ex.GetType(), ex.Message);
+                DebugLogger.ErrorFormat("HandleGetSequencePointsMessage => {0}:{1}", ex.GetType(), ex);
                 response.more = false;
                 response.count = 0;
                 _marshalWrapper.StructureToPtr(response, pinnedMemory, false);
@@ -169,7 +171,7 @@ namespace OpenCover.Framework.Communication
             {
                 var request = _marshalWrapper.PtrToStructure<MSG_GetBranchPoints_Request>(pinnedMemory);
                 BranchPoint[] origPoints;
-                _profilerCommunication.GetBranchPoints(request.processName, request.modulePath, request.assemblyName,
+                _profilerCommunication.GetBranchPoints(request.processPath, request.modulePath, request.assemblyName,
                     request.functionToken, out origPoints);
                 var num = origPoints.Maybe(o => o.Length);
 
@@ -202,7 +204,7 @@ namespace OpenCover.Framework.Communication
             }
             catch (Exception ex)
             {
-                DebugLogger.ErrorFormat("HandleGetBranchPointsMessage => {0}:{1}", ex.GetType(), ex.Message);
+                DebugLogger.ErrorFormat("HandleGetBranchPointsMessage => {0}:{1}", ex.GetType(), ex);
                 response.more = false;
                 response.count = 0;
                 _marshalWrapper.StructureToPtr(response, pinnedMemory, false);
@@ -225,7 +227,7 @@ namespace OpenCover.Framework.Communication
             }
             catch (Exception ex)
             {
-                DebugLogger.ErrorFormat("HandlerAllocateBufferMessage => {0}:{1}", ex.GetType(), ex.Message);
+                DebugLogger.ErrorFormat("HandlerAllocateBufferMessage => {0}:{1}", ex.GetType(), ex);
                 response.allocated = false;
                 response.bufferId = 0;
             }
@@ -249,7 +251,7 @@ namespace OpenCover.Framework.Communication
             }
             catch (Exception ex)
             {
-                DebugLogger.ErrorFormat("HandleCloseChannelMessage => {0}:{1}", ex.GetType(), ex.Message);
+                DebugLogger.ErrorFormat("HandleCloseChannelMessage => {0}:{1}", ex.GetType(), ex);
             }
             finally
             {
@@ -272,7 +274,7 @@ namespace OpenCover.Framework.Communication
             }
             catch (Exception ex)
             {
-                DebugLogger.ErrorFormat("HandleTrackMethodMessage => {0}:{1}", ex.GetType(), ex.Message);
+                DebugLogger.ErrorFormat("HandleTrackMethodMessage => {0}:{1}", ex.GetType(), ex);
                 response.track = false;
                 response.uniqueId = 0;
             }
@@ -290,11 +292,11 @@ namespace OpenCover.Framework.Communication
             try
             {
                 var request = _marshalWrapper.PtrToStructure<MSG_TrackAssembly_Request>(pinnedMemory);
-                response.track = _profilerCommunication.TrackAssembly(request.processName, request.modulePath, request.assemblyName);
+                response.track = _profilerCommunication.TrackAssembly(request.processPath, request.modulePath, request.assemblyName);
             }
             catch (Exception ex)
             {
-                DebugLogger.ErrorFormat("HandleTrackAssemblyMessage => {0}:{1}", ex.GetType(), ex.Message);
+                DebugLogger.ErrorFormat("HandleTrackAssemblyMessage => {0}:{1}", ex.GetType(), ex);
                 response.track = false;
             }
             finally
@@ -311,11 +313,11 @@ namespace OpenCover.Framework.Communication
             try
             {
                 var request = _marshalWrapper.PtrToStructure<MSG_TrackProcess_Request>(pinnedMemory);
-                response.track = _profilerCommunication.TrackProcess(request.processName);
+                response.track = _profilerCommunication.TrackProcess(request.processPath);
             }
             catch (Exception ex)
             {
-                DebugLogger.ErrorFormat("HandleTrackProcessMessage => {0}:{1}", ex.GetType(), ex.Message);
+                DebugLogger.ErrorFormat("HandleTrackProcessMessage => {0}:{1}", ex.GetType(), ex);
                 response.track = false;
             }
             finally

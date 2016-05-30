@@ -24,15 +24,25 @@ namespace OpenCover.Test.Framework.Persistance
     public class BasePersistenceTests :
         UnityAutoMockContainerBase<IPersistance, BasePersistanceStub>
     {
-        private readonly SkippedMethod[] _skippedReasonsModules = {SkippedMethod.Filter, SkippedMethod.MissingPdb};
-
-        private readonly SkippedMethod[] _skippedReasonsClasses =
+        private static readonly SkippedMethod[] _skippedReasonsModules =
         {
-            SkippedMethod.Filter, SkippedMethod.File,
+            SkippedMethod.Filter,
+            SkippedMethod.MissingPdb,
+            SkippedMethod.FolderExclusion,
+        };
+
+        private static readonly SkippedMethod[] _skippedReasonsClasses =
+        {
+            SkippedMethod.Filter,
+            SkippedMethod.File,
             SkippedMethod.Attribute
         };
 
-        private readonly SkippedMethod[] _skippedReasonsMethods = {SkippedMethod.File, SkippedMethod.Attribute};
+        private static readonly SkippedMethod[] _skippedReasonsMethods =
+        {
+            SkippedMethod.File,
+            SkippedMethod.Attribute
+        };
 
         [Test]
         public void CanNot_Add_Invalid_Module_To_Session()
@@ -52,9 +62,9 @@ namespace OpenCover.Test.Framework.Persistance
             //arrange
 
             // act 
-            var module1 = new Module {ModuleHash = "123", FullName = "Path1", Classes = new Class[0]};
+            var module1 = new Module {ModuleHash = "123", ModulePath = "Path1", Classes = new Class[0]};
             module1.Aliases.Add("Path1");
-            var module2 = new Module {ModuleHash = "123", FullName = "Path2", Classes = new Class[0]};
+            var module2 = new Module {ModuleHash = "123", ModulePath = "Path2", Classes = new Class[0]};
             module2.Aliases.Add("Path2");
             Instance.PersistModule(module1);
             Instance.PersistModule(module2);
@@ -84,7 +94,7 @@ namespace OpenCover.Test.Framework.Persistance
             BranchPoint[] pts;
             var module = new Module
             {
-                FullName = "ModulePath",
+                ModulePath = "ModulePath",
                 Classes = new[]
                 {
                     new Class
@@ -118,7 +128,7 @@ namespace OpenCover.Test.Framework.Persistance
             // arrange
             var module = new Module
             {
-                FullName = "ModulePath",
+                ModulePath = "ModulePath",
                 Classes = new[]
                 {
                     new Class {FullName = "namespace.class", Methods = new[] {new Method {MetadataToken = 1001}}}
@@ -143,7 +153,7 @@ namespace OpenCover.Test.Framework.Persistance
             InstrumentationPoint[] pts;
             var module = new Module
             {
-                FullName = "ModulePath",
+                ModulePath = "ModulePath",
                 Classes = new[]
                 {
                     new Class
@@ -181,9 +191,9 @@ namespace OpenCover.Test.Framework.Persistance
                 .Returns(true);
 
             // act 
-            var module1 = new Module {ModuleHash = "123", FullName = "Path1", Classes = new Class[0]};
+            var module1 = new Module {ModuleHash = "123", ModulePath = "Path1", Classes = new Class[0]};
             module1.Aliases.Add("Path1");
-            var module2 = new Module {ModuleHash = "123", FullName = "Path2", Classes = new Class[0]};
+            var module2 = new Module {ModuleHash = "123", ModulePath = "Path2", Classes = new Class[0]};
             module2.Aliases.Add("Path2");
             Instance.PersistModule(module1);
             Instance.PersistModule(module2);
@@ -416,7 +426,7 @@ namespace OpenCover.Test.Framework.Persistance
             // arrange
             var module = new Module
             {
-                FullName = "ModuleName",
+                ModulePath = "ModuleName",
                 Classes = new[]
                 {
                     new Class
@@ -445,7 +455,7 @@ namespace OpenCover.Test.Framework.Persistance
             var methodPoint = new InstrumentationPoint {VisitCount = 2000};
             var module = new Module
             {
-                FullName = "ModulePath",
+                ModulePath = "ModulePath",
                 Classes =
                     new[]
                     {
@@ -486,7 +496,7 @@ namespace OpenCover.Test.Framework.Persistance
             var seqPoint = new SequencePoint {VisitCount = 1000};
             var module = new Module
             {
-                FullName = "ModulePath",
+                ModulePath = "ModulePath",
                 Classes =
                     new[]
                     {
@@ -525,7 +535,7 @@ namespace OpenCover.Test.Framework.Persistance
             // arrange
             var module = new Module
             {
-                FullName = "ModuleName",
+                ModulePath = "ModuleName",
                 Classes = new[]
                 {
                     new Class
@@ -553,7 +563,7 @@ namespace OpenCover.Test.Framework.Persistance
             // arrange
             Instance.PersistModule(new Module
             {
-                FullName = "ModuleName",
+                ModulePath = "ModuleName",
                 Classes =
                     new[]
                     {
@@ -639,7 +649,7 @@ namespace OpenCover.Test.Framework.Persistance
 
             var module = new Module
             {
-                FullName = "Keep",
+                ModulePath = "Keep",
                 Classes = new[]
                 {
                     new Class
@@ -694,7 +704,7 @@ namespace OpenCover.Test.Framework.Persistance
 
             Instance.PersistModule(new Module
             {
-                FullName = "Keep",
+                ModulePath = "Keep",
                 Files = new[] {new File {UniqueId = 1, FullPath = "KeepFile"}, new File {UniqueId = 2}},
                 Classes = new[]
                 {
@@ -734,7 +744,7 @@ namespace OpenCover.Test.Framework.Persistance
             @class.MarkAsSkipped(reason);
             Instance.PersistModule(new Module
             {
-                FullName = "Keep",
+                ModulePath = "Keep",
                 Classes = new[]
                 {
                     @class,
@@ -764,7 +774,7 @@ namespace OpenCover.Test.Framework.Persistance
 
             var module = new Module
             {
-                FullName = "Keep",
+                ModulePath = "Keep",
                 Classes = new[]
                 {
                     new Class
@@ -802,17 +812,17 @@ namespace OpenCover.Test.Framework.Persistance
                 .SetupGet(x => x.HideSkipped)
                 .Returns(new List<SkippedMethod> {reason});
 
-            var module = new Module {FullName = "Skipped"};
+            var module = new Module {ModulePath = "Skipped"};
             module.MarkAsSkipped(reason);
             Instance.PersistModule(module);
-            Instance.PersistModule(new Module {FullName = "Keep"});
+            Instance.PersistModule(new Module {ModulePath = "Keep"});
 
             // act
             Instance.Commit();
 
             // assert
             Assert.AreEqual(1, Instance.CoverageSession.Modules.Count());
-            Assert.AreEqual("Keep", Instance.CoverageSession.Modules[0].FullName);
+            Assert.AreEqual("Keep", Instance.CoverageSession.Modules[0].ModulePath);
         }
 
         /// <summary>
@@ -827,7 +837,7 @@ namespace OpenCover.Test.Framework.Persistance
             var point = new InstrumentationPoint {IsSkipped = false};
             var module = new Module
             {
-                FullName = "Keep",
+                ModulePath = "Keep",
                 Classes = new[]
                 {
                     new Class {Methods = new[] {new Method {MethodPoint = point}, new Method()}},
@@ -864,7 +874,7 @@ namespace OpenCover.Test.Framework.Persistance
         public void IsTracking_Fase_IfModuleSkipped()
         {
             // arrange
-            var module = new Module {FullName = "ModulePath"};
+            var module = new Module {ModulePath = "ModulePath"};
             module.MarkAsSkipped(SkippedMethod.Filter);
 
             module.Aliases.Add("ModulePath");
@@ -881,7 +891,7 @@ namespace OpenCover.Test.Framework.Persistance
         public void IsTracking_True_IfModuleKnown()
         {
             // arrange
-            var module = new Module {FullName = "ModulePath", Classes = new Class[0]};
+            var module = new Module {ModulePath = "ModulePath", Classes = new Class[0]};
             module.Aliases.Add("ModulePath");
             Instance.PersistModule(module);
 

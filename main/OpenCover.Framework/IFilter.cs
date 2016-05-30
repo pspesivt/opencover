@@ -49,7 +49,7 @@ namespace OpenCover.Framework
         /// Determine if an [assemblyname]classname pair matches the current Exclusion or Inclusion filters  
         /// </summary>
         /// <param name="processName">The name of the process</param>
-        /// <param name="assemblyName">the name of the assembly under profile</param>
+        /// <param name="assemblyName">The name of the assembly under profile</param>
         /// <param name="className">the name of the class under profile</param>
         /// <returns>false - if pair matches the exclusion filter or matches no filters, true - if pair matches in the inclusion filter</returns>
         bool InstrumentClass(string processName, string assemblyName, string className);
@@ -101,11 +101,24 @@ namespace OpenCover.Framework
         bool RegExFilters { get; }
 
         /// <summary>
-        /// Should we instrument this asssembly
+        /// Should we instrument this process
         /// </summary>
         /// <param name="processName"></param>
         /// <returns></returns>
         bool InstrumentProcess(string processName);
+
+        /// <summary>
+        /// Add a folder to the list that modules in these folders (and their children) should be excluded
+        /// </summary>
+        /// <param name="excludedPath"></param>
+        void AddExcludedFolder(string excludedPath);
+        
+        /// <summary>
+        /// Should we use this module based on it's path
+        /// </summary>
+        /// <param name="modulePath"></param>
+        /// <returns></returns>
+        bool UseModule(string modulePath);
     }
 
 }

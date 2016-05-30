@@ -15,6 +15,7 @@ using Mono.Cecil.Pdb;
 using OpenCover.Framework.Model;
 using OpenCover.Framework.Strategy;
 using log4net;
+using Mono.Collections.Generic;
 using File = OpenCover.Framework.Model.File;
 using SequencePoint = OpenCover.Framework.Model.SequencePoint;
 
@@ -33,7 +34,7 @@ namespace OpenCover.Framework.Symbols
             }
             catch (Exception)
             {
-                //Console.WriteLine("Exception whilst trying to get the body of method {0}", methodDefinition.FullName);
+                return null;
             }
             return null;
         }
@@ -72,7 +73,7 @@ namespace OpenCover.Framework.Symbols
         {
             var origFolder = Path.GetDirectoryName(ModulePath);
 
-            var searchFolders = new List<string>() { origFolder, _commandLine.TargetDir };
+            var searchFolders = new List<string> { origFolder, _commandLine.TargetDir };
             if (_commandLine.SearchDirs != null)
                 searchFolders.AddRange(_commandLine.SearchDirs);
             searchFolders.Add(Environment.CurrentDirectory);
@@ -92,21 +93,15 @@ namespace OpenCover.Framework.Symbols
             if (!string.IsNullOrEmpty(targetfolder) && Directory.Exists(targetfolder))
             {
                 var name = Path.GetFileName(fileName);
-                //Console.WriteLine(targetfolder);
                 if (name != null)
                 {
-                    if (System.IO.File.Exists(Path.Combine(targetfolder, 
-                        Path.GetFileNameWithoutExtension(fileName) + ".pdb")))
-                    {
-                        if (System.IO.File.Exists(Path.Combine(targetfolder, name)))
+                    if (System.IO.File.Exists(Path.Combine(targetfolder, Path.GetFileNameWithoutExtension(fileName) + ".pdb")) &&
+                        System.IO.File.Exists(Path.Combine(targetfolder, name)))
                             return new SymbolFolder(targetfolder, new PdbReaderProvider());   
-                    }
                    
-                    if (System.IO.File.Exists(Path.Combine(targetfolder, fileName + ".mdb")))
-                    {
-                        if (System.IO.File.Exists(Path.Combine(targetfolder, name)))
+                    if (System.IO.File.Exists(Path.Combine(targetfolder, fileName + ".mdb")) &&
+                        System.IO.File.Exists(Path.Combine(targetfolder, name)))
                             return new SymbolFolder(targetfolder, new MdbReaderProvider());
-                    }
                 }
             }
             return null;
@@ -117,7 +112,8 @@ namespace OpenCover.Framework.Symbols
             try
             {
                 var symbolFolder = FindSymbolFolder();
-                if (symbolFolder == null) return;
+                if (symbolFolder == null) 
+                    return;
                 var folder = symbolFolder.TargetFolder ?? Environment.CurrentDirectory;
 
                 var parameters = new ReaderParameters
@@ -154,12 +150,9 @@ namespace OpenCover.Framework.Symbols
                     {
                         Environment.CurrentDirectory = currentPath;
                     }
-                    if (_sourceAssembly == null)
+                    if (_sourceAssembly == null && _logger.IsDebugEnabled)
                     {
-                        if (_logger.IsDebugEnabled)
-                        {
-                            _logger.DebugFormat("Cannot instrument {0} as no PDB/MDB could be loaded", ModulePath);
-                        }
+                        _logger.DebugFormat("Cannot instrument {0} as no PDB/MDB could be loaded", ModulePath);
                     }
                 }
                 return _sourceAssembly;
@@ -178,50 +171,62 @@ namespace OpenCover.Framework.Symbols
 
         public Class[] GetInstrumentableTypes()
         {
-            if (SourceAssembly == null) return new Class[0];
+            if (SourceAssembly == null) 
+                return new Class[0];
             var classes = new List<Class>();
             IEnumerable<TypeDefinition> typeDefinitions = SourceAssembly.MainModule.Types;
+
             GetInstrumentableTypes(typeDefinitions, classes, _filter, ModuleName);
             return classes.ToArray();
         }
 
-        private static void GetInstrumentableTypes(IEnumerable<TypeDefinition> typeDefinitions, List<Class> classes, IFilter filter, string moduleName)
+        private static void GetInstrumentableTypes(IEnumerable<TypeDefinition> typeDefinitions, List<Class> classes, IFilter filter, string assemblyName)
         {
             foreach (var typeDefinition in typeDefinitions)
             {
-                if (typeDefinition.IsEnum) continue;
-                if (typeDefinition.IsInterface && typeDefinition.IsAbstract) continue;
-                var @class = new Class { FullName = typeDefinition.FullName };
-                if (!filter.InstrumentClass(moduleName, @class.FullName))
-                {
-                    @class.MarkAsSkipped(SkippedMethod.Filter);
-                }
-                else if (filter.ExcludeByAttribute(typeDefinition))
-                {
-                    @class.MarkAsSkipped(SkippedMethod.Attribute);
-                }
+                if (typeDefinition.IsEnum) 
+                    continue;
+                if (typeDefinition.IsInterface && typeDefinition.IsAbstract) 
+                    continue;
 
-                var list = new List<string>();
-                if (!@class.ShouldSerializeSkippedDueTo())
-                {
-                    var files = from methodDefinition in typeDefinition.Methods
-                        where methodDefinition.SafeGetMethodBody() != null && methodDefinition.Body.Instructions != null
-                        from instruction in methodDefinition.Body.Instructions
-                        where instruction.SequencePoint != null
-                        select instruction.SequencePoint.Document.Url;
-
-                    list.AddRange(files.Distinct());
-                }
+                var @class = BuildClass(filter, assemblyName, typeDefinition);
 
                 // only instrument types that are not structs and have instrumentable points
-                if (!typeDefinition.IsValueType || list.Count > 0)
-                {
-                    @class.Files = list.Distinct().Select(file => new File { FullPath = file }).ToArray();
+                if (!typeDefinition.IsValueType || @class.Files.Maybe(f => f.Length) > 0)
                     classes.Add(@class);
-                }
+
                 if (typeDefinition.HasNestedTypes) 
-                    GetInstrumentableTypes(typeDefinition.NestedTypes, classes, filter, moduleName); 
+                    GetInstrumentableTypes(typeDefinition.NestedTypes, classes, filter, assemblyName); 
             }                                                                                        
+        }
+
+        private static Class BuildClass(IFilter filter, string assemblyName, TypeDefinition typeDefinition)
+        {
+            var @class = new Class {FullName = typeDefinition.FullName};
+            if (!filter.InstrumentClass(assemblyName, @class.FullName))
+            {
+                @class.MarkAsSkipped(SkippedMethod.Filter);
+            }
+            else if (filter.ExcludeByAttribute(typeDefinition))
+            {
+                @class.MarkAsSkipped(SkippedMethod.Attribute);
+            }
+
+            var list = new List<string>();
+            if (!@class.ShouldSerializeSkippedDueTo())
+            {
+                var files = from methodDefinition in typeDefinition.Methods
+                    where methodDefinition.SafeGetMethodBody() != null && methodDefinition.Body.Instructions != null
+                    from instruction in methodDefinition.Body.Instructions
+                    where instruction.SequencePoint != null
+                    select instruction.SequencePoint.Document.Url;
+
+                list.AddRange(files.Distinct());
+            }
+
+            if (!typeDefinition.IsValueType || list.Count > 0)
+                @class.Files = list.Distinct().Select(file => new File {FullPath = file}).ToArray();
+            return @class;
         }
 
         public Method[] GetMethodsForType(Class type, File[] files)
@@ -262,9 +267,8 @@ namespace OpenCover.Framework.Symbols
         {
             foreach (var methodDefinition in typeDefinition.Methods)
             {
-                if (methodDefinition.IsAbstract) continue;
-                if (methodDefinition.IsGetter) continue;
-                if (methodDefinition.IsSetter) continue;
+                if (methodDefinition.IsAbstract || methodDefinition.IsGetter || methodDefinition.IsSetter) 
+                    continue;
 
                 var method = BuildMethod(files, filter, methodDefinition, false, commandLine);
                 methods.Add(method);
@@ -351,7 +355,8 @@ namespace OpenCover.Framework.Symbols
 
         private void BuildMethodMap()
         {
-            if (_methodMap.Count > 0) return;
+            if (_methodMap.Count > 0) 
+                return;
             IEnumerable<TypeDefinition> typeDefinitions = SourceAssembly.MainModule.Types;
             BuildMethodMap(typeDefinitions);
         }
@@ -375,7 +380,8 @@ namespace OpenCover.Framework.Symbols
         private void GetSequencePointsForToken(int token, List<SequencePoint> list)
         {
             var methodDefinition = GetMethodDefinition(token);
-            if (methodDefinition == null) return;
+            if (methodDefinition == null) 
+                return;
             try
             {
                 UInt32 ordinal = 0;
@@ -401,20 +407,22 @@ namespace OpenCover.Framework.Symbols
             }
         }
 
-        private static Regex isMovenext = new Regex(@"\<[^\s>]+\>\w__\w(\w)?::MoveNext\(\)$", RegexOptions.Compiled | RegexOptions.ExplicitCapture);
+        private static readonly Regex IsMovenext = new Regex(@"\<[^\s>]+\>\w__\w(\w)?::MoveNext\(\)$", RegexOptions.Compiled | RegexOptions.ExplicitCapture);
         private void GetBranchPointsForToken(int token, List<BranchPoint> list)
         {
             var methodDefinition = GetMethodDefinition(token);
-            if (methodDefinition == null) return;
+            if (methodDefinition == null) 
+                return;
             try
             {
                 UInt32 ordinal = 0;
                 var safeMethodBody = methodDefinition.SafeGetMethodBody();
-                if (safeMethodBody == null) return;
+                if (safeMethodBody == null) 
+                    return;
                 var instructions = safeMethodBody.Instructions;
                 
                 // if method is a generated MoveNext skip first branch (could be a switch or a branch)
-                var skipFirstBranch = isMovenext.IsMatch(methodDefinition.FullName);
+                var skipFirstBranch = IsMovenext.IsMatch(methodDefinition.FullName);
 
                 foreach (var instruction in instructions.Where(instruction => instruction.OpCode.FlowControl == FlowControl.Cond_Branch))
                 {
@@ -424,7 +432,8 @@ namespace OpenCover.Framework.Symbols
                         continue;
                     }
 
-                    if (BranchIsInGeneratedFinallyBlock(instruction, methodDefinition)) continue;
+                    if (BranchIsInGeneratedFinallyBlock(instruction, methodDefinition)) 
+                        continue;
 
                     var pathCounter = 0;
 
@@ -437,119 +446,8 @@ namespace OpenCover.Framework.Symbols
                     if (null == instruction.Next)
                         return;
 
-                    // Add Default branch (Path=0)
-
-                    // Follow else/default instruction
-                    var @else = instruction.Next;
-
-                    var pathOffsetList = GetBranchPath(@else);
-
-                    // add Path 0
-                    var path0 = new BranchPoint
-                    {
-                        StartLine = branchingInstructionLine,
-                        Document = document,
-                        Offset = branchOffset,
-                        Ordinal = ordinal++,
-                        Path = pathCounter++,
-                        OffsetPoints =
-                            pathOffsetList.Count > 1
-                                ? pathOffsetList.GetRange(0, pathOffsetList.Count - 1)
-                                : new List<int>(),
-                        EndOffset = pathOffsetList.Last()
-                    };
-
-                    // Add Conditional Branch (Path=1)
-                    if (instruction.OpCode.Code != Code.Switch)
-                    {
-                        // Follow instruction at operand
-                        var @then = instruction.Operand as Instruction;
-                        if (@then == null)
-                            return;
-
-                        pathOffsetList = GetBranchPath(@then);
-
-                        // Add path 1
-                        var path1 = new BranchPoint
-                        {
-                            StartLine = branchingInstructionLine,
-                            Document = document,
-                            Offset = branchOffset,
-                            Ordinal = ordinal++,
-                            Path = pathCounter,
-                            OffsetPoints =
-                                pathOffsetList.Count > 1
-                                    ? pathOffsetList.GetRange(0, pathOffsetList.Count - 1)
-                                    : new List<int>(),
-                            EndOffset = pathOffsetList.Last()
-                        };
-
-                        // only add branch if branch does not match a known sequence 
-                        // e.g. auto generated field assignment
-                        // or encapsulates at least one sequence point
-                        var offsets = new[]
-                        {
-                            path0.Offset,
-                            path0.EndOffset,
-                            path1.Offset,
-                            path1.EndOffset
-                        };
-
-                        var ignoreSequences = new[]
-                        {
-                            new []{ Code.Brtrue_S, Code.Ldnull, Code.Ldftn, Code.Newobj, Code.Stsfld, Code.Br_S, Code.Ldsfld}, // CachedAnonymousMethodDelegate field allocation - debug
-                            new []{ Code.Brtrue_S, Code.Ldnull, Code.Ldftn, Code.Newobj, Code.Stsfld, Code.Ldsfld} // CachedAnonymousMethodDelegate field allocation
-                        };
-                       
-                        var bs = offsets.Min();
-                        var be = offsets.Max();
-
-                        var range = instructions.Where(i => (i.Offset >= bs) && (i.Offset <= be)).ToList();
-
-                        var match = ignoreSequences
-                            .Where(ignoreSequence => range.Count() >= ignoreSequence.Count())
-                            .Select(x => x.Zip(range, (code, i1) => new {Code1 = code, Code2 = i1.OpCode.Code}).All(y => y.Code1 == y.Code2))
-                            .Any();
-
-                        var count = range
-                            .Count(i => i.SequencePoint != null);
-
-                        if (!match || count > 0)
-                        {
-                            list.Add(path0);
-                            list.Add(path1);
-                        }
-                    }
-                    else // instruction.OpCode.Code == Code.Switch
-                    {
-                        var branchInstructions = instruction.Operand as Instruction[];
-                        if (branchInstructions == null || branchInstructions.Length == 0)
-                            return;
-
-                        list.Add(path0);
-                        // Add Conditional Branches (Path>0)
-                        foreach (var @case in branchInstructions)
-                        {
-                            // Follow operand istruction
-                            pathOffsetList = GetBranchPath(@case);
-
-                            // add paths 1..n
-                            var path1ToN = new BranchPoint
-                            {
-                                StartLine = branchingInstructionLine,
-                                Document = document,
-                                Offset = branchOffset,
-                                Ordinal = ordinal++,
-                                Path = pathCounter++,
-                                OffsetPoints =
-                                    pathOffsetList.Count > 1
-                                        ? pathOffsetList.GetRange(0, pathOffsetList.Count - 1)
-                                        : new List<int>(),
-                                EndOffset = pathOffsetList.Last()
-                            };
-                            list.Add(path1ToN);
-                        }
-                    }
+                    if (!BuildPointsForConditionalBranch(list, instruction, branchingInstructionLine, document, branchOffset, pathCounter, instructions, ref ordinal)) 
+                        return;
                 }
             }
             catch (Exception ex)
@@ -558,6 +456,143 @@ namespace OpenCover.Framework.Symbols
                     string.Format("An error occurred with 'GetBranchPointsForToken' for method '{0}'",
                         methodDefinition.FullName), ex);
             }
+        }
+
+        private bool BuildPointsForConditionalBranch(List<BranchPoint> list, Instruction instruction,
+            int branchingInstructionLine, string document, int branchOffset, int pathCounter, 
+            Collection<Instruction> instructions, ref uint ordinal)
+        {
+            // Add Default branch (Path=0)
+
+            // Follow else/default instruction
+            var @else = instruction.Next;
+
+            var pathOffsetList = GetBranchPath(@else);
+
+            // add Path 0
+            var path0 = new BranchPoint
+            {
+                StartLine = branchingInstructionLine,
+                Document = document,
+                Offset = branchOffset,
+                Ordinal = ordinal++,
+                Path = pathCounter++,
+                OffsetPoints =
+                    pathOffsetList.Count > 1
+                        ? pathOffsetList.GetRange(0, pathOffsetList.Count - 1)
+                        : new List<int>(),
+                EndOffset = pathOffsetList.Last()
+            };
+
+            // Add Conditional Branch (Path=1)
+            if (instruction.OpCode.Code != Code.Switch)
+            {
+                // Follow instruction at operand
+                var @then = instruction.Operand as Instruction;
+                if (@then == null)
+                    return false;
+
+                ordinal = BuildPointsForBranch(list, then, branchingInstructionLine, document, branchOffset,
+                    ordinal, pathCounter, path0, instructions);
+            }
+            else // instruction.OpCode.Code == Code.Switch
+            {
+                var branchInstructions = instruction.Operand as Instruction[];
+                if (branchInstructions == null || branchInstructions.Length == 0)
+                    return false;
+
+                ordinal = BuildPointsForSwitchCases(list, path0, branchInstructions, branchingInstructionLine,
+                    document, branchOffset, ordinal, ref pathCounter);
+            }
+            return true;
+        }
+
+        private uint BuildPointsForBranch(List<BranchPoint> list, Instruction then, int branchingInstructionLine, string document,
+            int branchOffset, uint ordinal, int pathCounter, BranchPoint path0, Collection<Instruction> instructions)
+        {
+            var pathOffsetList1 = GetBranchPath(@then);
+
+            // Add path 1
+            var path1 = new BranchPoint
+            {
+                StartLine = branchingInstructionLine,
+                Document = document,
+                Offset = branchOffset,
+                Ordinal = ordinal++,
+                Path = pathCounter,
+                OffsetPoints =
+                    pathOffsetList1.Count > 1
+                        ? pathOffsetList1.GetRange(0, pathOffsetList1.Count - 1)
+                        : new List<int>(),
+                EndOffset = pathOffsetList1.Last()
+            };
+
+            // only add branch if branch does not match a known sequence 
+            // e.g. auto generated field assignment
+            // or encapsulates at least one sequence point
+            var offsets = new[]
+            {
+                path0.Offset,
+                path0.EndOffset,
+                path1.Offset,
+                path1.EndOffset
+            };
+
+            var ignoreSequences = new[]
+            {
+                new[]
+                {Code.Brtrue_S, Code.Ldnull, Code.Ldftn, Code.Newobj, Code.Stsfld, Code.Br_S, Code.Ldsfld},
+                // CachedAnonymousMethodDelegate field allocation - debug
+                new[] {Code.Brtrue_S, Code.Ldnull, Code.Ldftn, Code.Newobj, Code.Stsfld, Code.Ldsfld}
+                // CachedAnonymousMethodDelegate field allocation
+            };
+
+            var bs = offsets.Min();
+            var be = offsets.Max();
+
+            var range = instructions.Where(i => (i.Offset >= bs) && (i.Offset <= be)).ToList();
+
+            var match = ignoreSequences
+                .Where(ignoreSequence => range.Count() >= ignoreSequence.Count())
+                .Select(
+                    x =>
+                        x.Zip(range, (code, i1) => new {Code1 = code, Code2 = i1.OpCode.Code})
+                            .All(y => y.Code1 == y.Code2))
+                .Any();
+
+            var count = range
+                .Count(i => i.SequencePoint != null);
+
+            if (!match || count > 0)
+            {
+                list.Add(path0);
+                list.Add(path1);
+            }
+            return ordinal;
+        }
+
+        private uint BuildPointsForSwitchCases(List<BranchPoint> list, BranchPoint path0, Instruction[] branchInstructions,
+            int branchingInstructionLine, string document, int branchOffset, uint ordinal, ref int pathCounter)
+        {
+            var counter = pathCounter;
+            list.Add(path0);
+            // Add Conditional Branches (Path>0)
+            list.AddRange(branchInstructions.Select(GetBranchPath)
+                .Select(pathOffsetList1 => new BranchPoint
+                {
+                    StartLine = branchingInstructionLine,
+                    Document = document,
+                    Offset = branchOffset,
+                    Ordinal = ordinal++,
+                    Path = counter++,
+                    OffsetPoints =
+                        pathOffsetList1.Count > 1
+                            ? pathOffsetList1.GetRange(0, pathOffsetList1.Count - 1)
+                            : new List<int>(),
+                    EndOffset = pathOffsetList1.Last()
+                }));
+            pathCounter = counter;
+            return ordinal;
         }
 
         private static bool BranchIsInGeneratedFinallyBlock(Instruction branchInstruction, MethodDefinition methodDefinition)
@@ -614,7 +649,8 @@ namespace OpenCover.Framework.Symbols
         private Instruction FindClosestSequencePoints(MethodBody methodBody, Instruction instruction)
         {
             var sequencePointsInMethod = methodBody.Instructions.Where(HasValidSequencePoint).ToList();
-            if (!sequencePointsInMethod.Any()) return null;
+            if (!sequencePointsInMethod.Any()) 
+                return null;
             var idx = sequencePointsInMethod.BinarySearch(instruction, new InstructionByOffsetComparer());
             Instruction prev;
             if (idx < 0)
@@ -653,13 +689,15 @@ namespace OpenCover.Framework.Symbols
         private void GetCyclomaticComplexityForToken(int token, ref int complexity)
         {
             var methodDefinition = GetMethodDefinition(token);
-            if (methodDefinition == null) return;
+            if (methodDefinition == null) 
+                return;
             complexity = Gendarme.Rules.Maintainability.AvoidComplexMethodsRule.GetCyclomaticComplexity(methodDefinition);
         }
 
         public TrackedMethod[] GetTrackedMethods()
         {
-            if (SourceAssembly==null) return null;
+            if (SourceAssembly==null) 
+                return null;
 
             var modulePath = ModulePath;
             if (!System.IO.File.Exists(modulePath))

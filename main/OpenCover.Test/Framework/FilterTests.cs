@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using Mono.Cecil;
 using Mono.Collections.Generic;
@@ -29,14 +28,14 @@ namespace OpenCover.Test.Framework
             public FilterType FilterTypeResult { get; set; }
         }
 
-        private readonly string[] _invalidFilterExpressions =
+        private static readonly string[] _invalidFilterExpressions =
         {
             "Garbage", "+[]", "-[ ]", "[ ", " ]", "+[]]", "-[][",
             @"-[\]", @"+[X]\", "-[X]]", "+[X][", "-<[*]*", "+>[*]*",
-            "+<>[*]*", "-[*]", "-[]*", "-<*>[*]", "-<*>[]*"
+            "+<>[*]*", "-[*]", "-[]*", "-<*>[*]", "-<*>[]*", "-[\u00a0]*"
         };
 
-        private readonly FilterData[] _filterExpressions =
+        private static readonly FilterData[] _filterExpressions =
         {
             new FilterData
             {
@@ -106,10 +105,10 @@ namespace OpenCover.Test.Framework
             [ValueSource("_invalidFilterExpressions")]string assemblyClassPair)
         {
             // arrange
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             // act/assert
-            Assert.Catch<InvalidOperationException>(() => filter.AddFilter(assemblyClassPair),
+            Assert.Catch<ExitApplicationWithoutReportingException>(() => filter.AddFilter(assemblyClassPair),
                 "'{0}' should be invalid", assemblyClassPair);
         }
 
@@ -118,7 +117,7 @@ namespace OpenCover.Test.Framework
             [ValueSource("_filterExpressions")]FilterData assemblyClassPair)
         {
             // arrange
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             // act
             filter.AddFilter(assemblyClassPair.FilterExpression);
@@ -152,7 +151,7 @@ namespace OpenCover.Test.Framework
             public bool ExpectedResult { get; set; }
         }
 
-        private readonly UseAssemblyData[] _useAssemblyData = 
+        private static readonly UseAssemblyData[] _useAssemblyData = 
                                                          {
                                                              new UseAssemblyData
                                                                  {
@@ -204,11 +203,11 @@ namespace OpenCover.Test.Framework
             [ValueSource("_useAssemblyData")]UseAssemblyData data)
         {
             // arrange
-            var filter = new Filter();
+            var filter = new Filter(false);
             data.Filters.ForEach(filter.AddFilter);
 
             // act
-            var result = filter.UseAssembly("processName.exe", data.Assembly);
+            var result = filter.UseAssembly("processName", data.Assembly);
 
             // result
             Assert.AreEqual(data.ExpectedResult, result,
@@ -226,7 +225,7 @@ namespace OpenCover.Test.Framework
             public bool ExpectedResult { get; set; }
         }
 
-        private readonly InstrumentClassData[] _instrumentClassData =
+        private static readonly InstrumentClassData[] _instrumentClassData =
                                                                  {
                                                                      new InstrumentClassData
                                                                          {
@@ -341,8 +340,8 @@ namespace OpenCover.Test.Framework
         public void InstrumentClass_Tests(
             [ValueSource("_instrumentClassData")]InstrumentClassData data)
         {
-            //// arrange
-            var filter = new Filter();
+            // arrange
+            var filter = new Filter(false);
             data.Filters.ForEach(filter.AddFilter);
 
             // act
@@ -357,7 +356,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void AddAttributeExclusionFilters_HandlesNull()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             filter.AddAttributeExclusionFilters(null);
 
@@ -367,7 +366,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void AddAttributeExclusionFilters_Handles_Null_Elements()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             filter.AddAttributeExclusionFilters(new[] { null, "" });
 
@@ -377,7 +376,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void AddAttributeExclusionFilters_Escapes_Elements_And_Matches()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             filter.AddAttributeExclusionFilters(new[] { ".*" });
 
@@ -387,7 +386,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void Entity_Is_Not_Excluded_If_No_Filters_Set()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
             var entity = new Mock<IMemberDefinition>();
 
             Assert.IsFalse(filter.ExcludeByAttribute(entity.Object));
@@ -396,7 +395,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void AddFileExclusionFilters_HandlesNull()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             filter.AddFileExclusionFilters(null);
 
@@ -406,7 +405,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void AddFileExclusionFilters_Handles_Null_Elements()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             filter.AddFileExclusionFilters(new[] { null, "" });
 
@@ -416,7 +415,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void AddFileExclusionFilters_Escapes_Elements_And_Matches()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             filter.AddFileExclusionFilters(new[] { ".*" });
 
@@ -426,7 +425,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void AddTestFileFilters_HandlesNull()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             filter.AddTestFileFilters(null);
 
@@ -436,7 +435,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void AssemblyIsIncludedForTestMethodGatheringWhenFilterMatches()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             filter.AddTestFileFilters(new[] { "A*" });
 
@@ -448,7 +447,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void AddTestFileFilters_Handles_Null_Elements()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             filter.AddTestFileFilters(new[] { null, "" });
 
@@ -458,7 +457,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void AddTestFileFilters_Escapes_Elements_And_Matches()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             filter.AddTestFileFilters(new[] { ".*" });
 
@@ -505,7 +504,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void File_Is_Not_Excluded_If_No_Filters_Set()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             Assert.IsFalse(filter.ExcludeByFile("xyz.cs"));
         }
@@ -513,7 +512,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void File_Is_Not_Excluded_If_No_File_Not_Supplied()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
 
             Assert.IsFalse(filter.ExcludeByFile(""));
         }
@@ -521,7 +520,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void File_Is_Not_Excluded_If_Does_Not_Match_Filter()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
             filter.AddFileExclusionFilters(new[] { "XXX.*" });
 
             Assert.IsFalse(filter.ExcludeByFile("YYY.cs"));
@@ -530,7 +529,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void File_Is_Excluded_If_Matches_Filter()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
             filter.AddFileExclusionFilters(new[] { "XXX.*" });
 
             Assert.IsTrue(filter.ExcludeByFile("XXX.cs"));
@@ -543,7 +542,7 @@ namespace OpenCover.Test.Framework
 
             var type = sourceAssembly.MainModule.Types.First(x => x.FullName == typeof(Samples.Concrete).FullName);
 
-            var filter = new Filter();
+            var filter = new Filter(false);
             filter.AddAttributeExclusionFilters(new[] { "*ExcludeMethodAttribute" });
 
             foreach (var methodDefinition in type.Methods)
@@ -561,7 +560,7 @@ namespace OpenCover.Test.Framework
 
             var type = sourceAssembly.MainModule.Types.First(x => x.FullName == typeof(Samples.Concrete).FullName);
 
-            var filter = new Filter();
+            var filter = new Filter(false);
             filter.AddAttributeExclusionFilters(new[] { "*ExcludeMethodAttribute" });
 
             foreach (var propertyDefinition in type.Properties)
@@ -577,7 +576,7 @@ namespace OpenCover.Test.Framework
 
             var type = sourceAssembly.MainModule.Types.First(x => x.FullName == typeof(Samples.Anonymous).FullName);
 
-            var filter = new Filter();
+            var filter = new Filter(false);
             filter.AddAttributeExclusionFilters(new[] { "*ExcludeMethodAttribute" });
 
             foreach (var methodDefinition in type.Methods.Where(x => x.Name.Contains("EXCLUDE")))
@@ -594,7 +593,7 @@ namespace OpenCover.Test.Framework
 
             var type = sourceAssembly.MainModule.Types.First(x => x.FullName == typeof(Samples.Anonymous).FullName);
 
-            var filter = new Filter();
+            var filter = new Filter(false);
             filter.AddAttributeExclusionFilters(new[] { "*ExcludeMethodAttribute" });
 
             foreach (var methodDefinition in type.Methods.Where(x => x.Name.Contains("INCLUDE")))
@@ -607,7 +606,7 @@ namespace OpenCover.Test.Framework
         [Test]
         public void Handles_Issue117()
         {
-            var filter = new Filter();
+            var filter = new Filter(false);
             filter.AddAttributeExclusionFilters(new[] { "*ExcludeMethodAttribute" });
 
             var mockDefinition = new Mock<IMemberDefinition>();
@@ -627,7 +626,7 @@ namespace OpenCover.Test.Framework
             var sourceAssembly = AssemblyDefinition.ReadAssembly(typeof(Samples.Concrete).Assembly.Location);
            
             // act
-            var filter = new Filter();
+            var filter = new Filter(false);
             Assert.False(filter.ExcludeByAttribute(sourceAssembly));
 
             // assert
@@ -670,7 +669,7 @@ namespace OpenCover.Test.Framework
             var sourceAssembly = AssemblyDefinition.ReadAssembly(typeof(Samples.Concrete).Assembly.Location);
 
             // act
-            var filter = new Filter();
+            var filter = new Filter(false);
             var allTypes = AllTypes(sourceAssembly.MainModule);
             var typeDefinition = allTypes.First(x => x.Name == typeName);
             
@@ -698,7 +697,7 @@ namespace OpenCover.Test.Framework
             var type = sourceAssembly.MainModule.Types.First(x => x.FullName == typeof(Samples.DeclaredMethodClass).FullName);
 
             // act/assert
-            var filter = new Filter();
+            var filter = new Filter(false);
             var wasTested = false;
             foreach (var methodDefinition in type.Methods
                 .Where(x => x.IsGetter || x.IsSetter).Where(x => x.Name.EndsWith("AutoProperty")))
@@ -733,7 +732,7 @@ namespace OpenCover.Test.Framework
             // act
 
             // assert
-            Assert.AreEqual(canUse, filter.UseAssembly("processName.exe", assembly));
+            Assert.AreEqual(canUse, filter.UseAssembly("processName", assembly));
         }
 
         [Test]
@@ -772,6 +771,18 @@ namespace OpenCover.Test.Framework
         }
 
         [Test]
+        public void ModulesInExcludedFoldersAreIdentifiedCorrectly()
+        {
+            // arrange
+            var filter = new Filter(true);
+            filter.AddExcludedFolder("ABC");
+
+            // act
+            Assert.IsFalse(filter.UseModule(@"ABC\m.dll"));
+            Assert.IsTrue(filter.UseModule(@"DEF\m.dll"));
+        }
+
+        [Test]
         public void File_Is_Excluded_If_Matches_Filter_UsingRegularExpressions()
         {
             // arrange
@@ -792,7 +803,7 @@ namespace OpenCover.Test.Framework
         {
             var filter = Filter.BuildFilter(new CommandLineParser(commandLine).Do(_ => _.ExtractAndValidateArguments()));
             Assert.IsNotNull(filter);
-            Assert.AreEqual(matchAssembly, filter.UseAssembly("processName.exe", "System"));
+            Assert.AreEqual(matchAssembly, filter.UseAssembly("processName", "System"));
         }
 
         [Test]
@@ -802,85 +813,71 @@ namespace OpenCover.Test.Framework
 
         #region Initial test set
         [TestCase("+<*>[*]*", null, false, false)]
-        [TestCase("-<*>[*]*", "process.exe", false, false)]
-        [TestCase("-<pro*>[*]*", "process.exe", false, false)]
-        [TestCase("-<*cess>[*]*", "process.exe", false, false)]
-        [TestCase("+<*>[*]*", "process.exe", true, true)]
-        [TestCase("+<pro*>[*]*", "process.exe", true, true)]
-        [TestCase("+<*cess>[*]*", "process.exe", true, true)]
-        [TestCase("+[ABC*]*", "nunit-executable.exe", true, true)]
-        [TestCase("+[*]DEF.*", "nunit-executable.exe", true, true)]
-        [TestCase("+[*]*", "process.exe", true, true)]
-        [TestCase("-[ABC*]*", "nunit-executable.exe", true, true)]
-        [TestCase("-[*]DEF.*", "nunit-executable.exe", true, true)]
-        [TestCase("-[*]*", "process.exe", false, false)]
-        [TestCase("-<*>[*]* +<pro*>[*]*", "process.exe", false, false)]
-        [TestCase("+<abc*>[*]* +<pro*>[*]*", "process.exe", true, true)]
-        [TestCase("-<*>[ABC*]* +[*]*", "process.exe", true, true)]
-        [TestCase("-<*>[ABC*]* +<*>[*]*", "process.exe", true, true)]
-        [TestCase("-<pro*>[D*F]* +[*]*", "process.exe", true, true)]
-        [TestCase("-<*cess>[*GHI]* +[*]*", "process.exe", true, true)]
-        [TestCase("+<ABC>[*]*", "process.exe", false, false)]
-        [TestCase("+<pro*>[*]*", "process.exe", true, true)]
-        #endregion
-
-        #region match no drive-path-extension, only process-name (same as above)
-        [TestCase("-<pro*>[*]*", @"C:\Debug\process.exe", false, false)]
-        [TestCase("+<pro*>[*]*", @"C:\Debug\process.exe", true, true)]
-        [TestCase("-<*cess>[*]*", @"C:\Debug\process.exe", false, false)]
-        [TestCase("+<*cess>[*]*", @"C:\Debug\process.exe", true, true)]
-        #endregion
-
-        #region match full-path-process-name (path\name\ext)
-        [TestCase(@"-<C:\Debug\pro*>[*]*", @"C:\Debug\process.exe", false, false)]
-        [TestCase(@"+<C:\Debug\pro*>[*]*", @"C:\Debug\process.exe", true, true)]
-
-        [TestCase(@"-<*cess.exe>[*]*", @"C:\Debug\process.exe", false, false)]
-        [TestCase(@"-<*cess.dll>[*]*", @"C:\Debug\process.exe", true, true)]
-
-        [TestCase(@"+<*cess.dll>[*]*", @"C:\Debug\process.exe", false, false)]
-        [TestCase(@"+<*cess.exe>[*]*", @"C:\Debug\process.exe", true, true)]
+        [TestCase("-<*>[*]*", "process", false, false)]
+        [TestCase("-<pro*>[*]*", "process", false, false)]
+        [TestCase("-<*cess>[*]*", "process", false, false)]
+        [TestCase("+<*>[*]*", "process", true, true)]
+        [TestCase("+<pro*>[*]*", "process", true, true)]
+        [TestCase("+<*cess>[*]*", "process", true, true)]
+        [TestCase("+[ABC*]*", "nunit-executable", true, true)]
+        [TestCase("+[*]DEF.*", "nunit-executable", true, true)]
+        [TestCase("+[*]*", "process", true, true)]
+        [TestCase("-[ABC*]*", "nunit-executable", true, true)]
+        [TestCase("-[*]DEF.*", "nunit-executable", true, true)]
+        [TestCase("-[*]*", "process", false, false)]
+        [TestCase("-<*>[*]* +<pro*>[*]*", "process", false, false)]
+        [TestCase("+<abc*>[*]* +<pro*>[*]*", "process", true, true)]
+        [TestCase("-<*>[ABC*]* +[*]*", "process", true, true)]
+        [TestCase("-<*>[ABC*]* +<*>[*]*", "process", true, true)]
+        [TestCase("-<pro*>[D*F]* +[*]*", "process", true, true)]
+        [TestCase("-<*cess>[*GHI]* +[*]*", "process", true, true)]
+        [TestCase("+<ABC>[*]*", "process", false, false)]
+        [TestCase("+<pro*>[*]*", "process", true, true)]
         #endregion
 
         #region match when both filters, when no exclude filters, or when no include filters or when no filters at all
+
         // 1/1 match include filter if not excluded
-        [TestCase(@"-<C:\Debug\pro*>[*]* +<noprocess>[*]*", @"C:\Release\process.exe", false, false)]
-        [TestCase(@"-<C:\Debug\pro*>[*]* +<process>[*]*", @"C:\Release\process.exe", true, true)]
+        [TestCase(@"-<pro*>[*]* +<no-process>[*]*", "noprocess", false, false)]
+        [TestCase(@"-<pro*>[*]* +<noprocess>[*]*", "noprocess", true, true)]
 
         // 1/0 include if not excluded and no include filters
-        [TestCase(@"-<C:\Debug\pro*>[*]*", @"C:\Release\process.exe", true, true)]
+        [TestCase(@"-<pro*>[*]*", "noprocess", true, true)]
 
         // 0/1 match include filter if no exclude filters exists
-        [TestCase(@"+<C:\Debug\pro*>[*]*", @"C:\Release\process.exe", false, false)]
-        [TestCase(@"+<C:\Debug\pro*>[*]*", @"C:\Debug\process.exe", true, true)]
+        [TestCase(@"+<pro*>[*]*", "noprocess", false, false)]
+        [TestCase(@"+<pro*>[*]*", "process", true, true)]
         
         // 0/0 always include if no exclude and no include filters
         [TestCase(@"", @"C:\Release\process.exe", true, true)]
+
         #endregion
 
         #region exclude only when filter does not ends with [*]*
-        [TestCase(@"-<*>[*]*", @"C:\Debug\process.exe", false, false)]
-        [TestCase(@"-<*>[*x*]*", @"C:\Debug\process.exe", true, true)]
-        [TestCase(@"-<*>[*]*x*", @"C:\Debug\process.exe", true, true)]
-        [TestCase(@"-<*>[*x*]*x*", @"C:\Debug\process.exe", true, true)]
+
+        [TestCase(@"-<*>[*]*", "process", false, false)]
+        [TestCase(@"-<*>[*x*]*", "process", true, true)]
+        [TestCase(@"-<*>[*]*x*", "process", true, true)]
+        [TestCase(@"-<*>[*x*]*x*", "process", true, true)]
+
         #endregion
 
         #region always include matching process regardless how process filter ends ([*]*|[*x*]*x*)
-        [TestCase(@"+<*>[*]*", @"C:\Debug\process.exe", true, true)]
-        [TestCase(@"+<*>[*x*]*", @"C:\Debug\process.exe", true, true)]
-        [TestCase(@"+<*>[*]*x*", @"C:\Debug\process.exe", true, true)]
-        [TestCase(@"+<*>[*x*]*x*", @"C:\Debug\process.exe", true, true)]
+
+        [TestCase(@"+<*>[*]*", "process", true, true)]
+        [TestCase(@"+<*>[*x*]*", "process", true, true)]
+        [TestCase(@"+<*>[*]*x*", "process", true, true)]
+        [TestCase(@"+<*>[*x*]*x*", "process", true, true)]
+
         #endregion
 
         #region never exclude proces that matches default-assembly-exclusion-filters (ie "mscorlib" when exclusion filters enabled)
-        [TestCase(@"-<C:\Debug\pro*>[*]*", @"C:\dotNet\mscorlib.dll", true, true)]
+
+        [TestCase(@"-<pro*>[*]*", @"C:\dotNet\mscorlib.dll", true, true)]
 
         // issue found by user #329
-        [TestCase(@"+[Open*]* -[OpenCover.T*]* -[*nunit*]*", @"C:\Release\nunit-console.exe.exe", true, true)]
-        #endregion
+        [TestCase(@"+[Open*]* -[OpenCover.T*]* -[*nunit*]*", "nunit-console", true, true)]
 
-        #region Cover last branches with invalid path chars (Path.GetInvalidPathChars)
-        [TestCase(@"+<*>[*]*", "C:\\Debug\\process.exe|<>\"", true, true)]
         #endregion
 
         public void CanFilterByProcessName(string filterArg, string processName, bool expectedNoDefaultFilters, bool expectedWithDefaultFilters)

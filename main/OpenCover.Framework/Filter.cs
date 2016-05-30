@@ -5,10 +5,10 @@
 //
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using log4net;
 using Mono.Cecil;
 using OpenCover.Framework.Filtering;
 
@@ -19,6 +19,8 @@ namespace OpenCover.Framework
     /// </summary>
     public class Filter : IFilter
     {
+        private static readonly ILog Logger = LogManager.GetLogger("OpenCover");
+
         internal IList<AssemblyAndClassFilter> InclusionFilters { get; private set; }
         internal IList<AssemblyAndClassFilter> ExclusionFilters { get; private set; }
         internal IList<RegexFilter> ExcludedAttributes { get; private set; }
@@ -35,7 +37,7 @@ namespace OpenCover.Framework
         /// Standard constructor
         /// </summary>
         /// <param name="useRegexFilters">Indicates if the input strings for this class are already Regular Expressions</param>
-        public Filter(bool useRegexFilters = false)
+        public Filter(bool useRegexFilters)
         {
             InclusionFilters = new List<AssemblyAndClassFilter>();
             ExclusionFilters = new List<AssemblyAndClassFilter>();
@@ -49,30 +51,21 @@ namespace OpenCover.Framework
         /// Decides whether an assembly should be included in the instrumentation
         /// </summary>
         /// <param name="processName">The name of the process being profiled</param>
-        /// <param name="assemblyName">the name of the assembly under profile</param>
+        /// <param name="assemblyName">The name of the assembly under profile</param>
         /// <remarks>All assemblies matching either the inclusion or exclusion filter should be included 
         /// as it is the class that is being filtered within these unless the class filter is *</remarks>
         public bool UseAssembly(string processName, string assemblyName)
         {
-            processName = Path.GetFileNameWithoutExtension(processName);
-            var matchingExclusionFilters = ExclusionFilters.GetMatchingFiltersForAssemblyName(assemblyName);
-            if (matchingExclusionFilters.Any(exclusionFilter => exclusionFilter.ClassName == ".*" && exclusionFilter.IsMatchingProcessName(processName)))
-            {
+            IList<AssemblyAndClassFilter> matchingExclusionFilters;
+            if (ExcludeProcessOrAssembly(processName, assemblyName, out matchingExclusionFilters)) 
                 return false;
-            }
 
             if (matchingExclusionFilters.Any(exclusionFilter => exclusionFilter.ClassName != ".*"))
-            {
                 return true;
-            }
 
             var matchingInclusionFilters = InclusionFilters.GetMatchingFiltersForAssemblyName(assemblyName);
-            if (matchingInclusionFilters.Any())
-            {
-                return true;
-            }
 
-            return false;
+            return matchingInclusionFilters.Any();
         }
 
         /// <summary>
@@ -89,12 +82,9 @@ namespace OpenCover.Framework
                 return false;
             }
 
-            processName = Path.GetFileNameWithoutExtension(processName);
-            var matchingExclusionFilters = ExclusionFilters.GetMatchingFiltersForAssemblyName(assemblyName);
-            if (matchingExclusionFilters.Any(exclusionFilter => exclusionFilter.ClassName == ".*" && exclusionFilter.IsMatchingProcessName(processName)))
-            {
+            IList<AssemblyAndClassFilter> matchingExclusionFilters;
+            if (ExcludeProcessOrAssembly(processName, assemblyName, out matchingExclusionFilters)) 
                 return false;
-            }
 
             if (matchingExclusionFilters
                 .Where(exclusionFilter => exclusionFilter.ClassName != ".*")
@@ -104,20 +94,24 @@ namespace OpenCover.Framework
             }
 
             var matchingInclusionFilters = InclusionFilters.GetMatchingFiltersForAssemblyName(assemblyName);
-            if (matchingInclusionFilters.Any(inclusionFilter => inclusionFilter.IsMatchingClassName(className)))
-            {
-                return true;
-            }
 
-            return false;
+            return matchingInclusionFilters.Any(inclusionFilter => inclusionFilter.IsMatchingClassName(className));
         }
 
+        private bool ExcludeProcessOrAssembly(string processName, string assemblyName, out IList<AssemblyAndClassFilter> matchingExclusionFilters)
+        {
+            matchingExclusionFilters = ExclusionFilters.GetMatchingFiltersForAssemblyName(assemblyName);
+            return matchingExclusionFilters.Any(
+                exclusionFilter =>
+                    exclusionFilter.ClassName == ".*" &&
+                    (exclusionFilter.IsMatchingProcessName(processName)));
+        }
 
         /// <summary>
         /// Determine if an [assemblyname]classname pair matches the current Exclusion or Inclusion filters  
         /// </summary>
-        /// <param name="assemblyName">the name of the assembly under profile</param>
-        /// <param name="className">the name of the class under profile</param>
+        /// <param name="assemblyName">The name of the assembly under profile</param>
+        /// <param name="className">The name of the class under profile</param>
         /// <returns>false - if pair matches the exclusion filter or matches no filters, true - if pair matches in the inclusion filter</returns>
         public bool InstrumentClass(string assemblyName, string className)
         {
@@ -127,60 +121,71 @@ namespace OpenCover.Framework
         /// <summary>
         /// Add a filter
         /// </summary>
-        /// <param name="assemblyClassName">A filter is of the format (+ or -)[assemblyName]className, wildcards are allowed. <br/>
+        /// <param name="processAssemblyClassFilter">Filter is of the format (+ or -)&lt;processFilter&gt;[assemblyFilter]classFilter, wildcards are allowed. <br/>
         /// i.e. -[mscorlib], -[System.*]*, +[App.*]*, +[*]*
         /// </param>
-        public void AddFilter(string assemblyClassName)
+        public void AddFilter(string processAssemblyClassFilter)
         {
-            string assemblyName;
-            string className;
-            string processName;
+            string assemblyFilter;
+            string classFilter;
+            string processFilter;
             FilterType filterType;
-            GetAssemblyClassName(assemblyClassName, RegExFilters, out filterType, out assemblyName, out className, out processName);
+            GetAssemblyClassName(processAssemblyClassFilter, RegExFilters, out filterType, out assemblyFilter, out classFilter, out processFilter);
 
-            if (!RegExFilters)
+            try
             {
-                processName = (string.IsNullOrEmpty(processName) ? "*" : processName).ValidateAndEscape("<>|\""); // Path.GetInvalidPathChars except *?
-                assemblyName = assemblyName.ValidateAndEscape();
-                className = className.ValidateAndEscape();
+                if (!RegExFilters)
+                {
+                    processFilter = ValidateAndEscape((string.IsNullOrEmpty(processFilter) ? "*" : processFilter), "<>|\"", "process"); // Path.GetInvalidPathChars except *?
+                    assemblyFilter = ValidateAndEscape(assemblyFilter, @"\[]", "assembly");
+                    classFilter = ValidateAndEscape(classFilter, @"\[]", "class/type");
+                }
+
+                var filter = new AssemblyAndClassFilter(processFilter, assemblyFilter, classFilter);
+                if (filterType == FilterType.Inclusion)
+                    InclusionFilters.Add(filter);
+
+                if (filterType == FilterType.Exclusion)
+                    ExclusionFilters.Add(filter);
             }
-
-            var filter = new AssemblyAndClassFilter(processName, assemblyName, className);
-            if (filterType == FilterType.Inclusion)
-                InclusionFilters.Add(filter);
-
-            if (filterType == FilterType.Exclusion)
-                ExclusionFilters.Add(filter);
+            catch (Exception)
+            {
+                HandleInvalidFilterFormat(processAssemblyClassFilter);
+            }
         }
 
-        private static void GetAssemblyClassName(string assemblyClassName, bool useRegEx, out FilterType filterType, out string assemblyName, out string className, out string processName)
+        private static void GetAssemblyClassName(string processAssemblyClassFilter, bool useRegEx, out FilterType filterType, out string assemblyFilter, out string classFilter, out string processFilter)
         {
-            className = string.Empty;
-            assemblyName = string.Empty;
+            classFilter = string.Empty;
+            assemblyFilter = string.Empty;
+            processFilter = string.Empty;
+            filterType = FilterType.Inclusion;
             var regEx = new Regex(@"^(?<type>([+-]))(<(?<process>(.+))>)?(\[(?<assembly>(.+))\])(?<class>(.+))$");
             if (useRegEx)
                 regEx = new Regex(@"^(?<type>([+-]))(<\((?<process>(.+))\)>)?(\[\((?<assembly>(.+))\)\])(\((?<class>(.+))\))$");
 
-            var match = regEx.Match(assemblyClassName);
+            var match = regEx.Match(processAssemblyClassFilter);
             if (match.Success)
             {
                 filterType = match.Groups["type"].Value.ParseFilterType();
-                assemblyName = match.Groups["assembly"].Value;
-                className = match.Groups["class"].Value;
-                processName = match.Groups["process"].Value;
+                assemblyFilter = match.Groups["assembly"].Value;
+                classFilter = match.Groups["class"].Value;
+                processFilter = match.Groups["process"].Value;
 
-                if (string.IsNullOrWhiteSpace(assemblyName))
-                    throw InvalidFilterFormatException(assemblyClassName);
+                if (string.IsNullOrWhiteSpace(assemblyFilter))
+                    HandleInvalidFilterFormat(processAssemblyClassFilter);
             }
             else
             {
-                throw InvalidFilterFormatException(assemblyClassName);
+                HandleInvalidFilterFormat(processAssemblyClassFilter);
             }
         }
 
-        private static InvalidOperationException InvalidFilterFormatException(string assemblyClassName)
+        private static void HandleInvalidFilterFormat(string filter)
         {
-            return new InvalidOperationException(string.Format("The supplied filter '{0}' does not meet the required format for a filter +-[assemblyname]classname", assemblyClassName));
+            Logger.ErrorFormat("Unable to process the filter '{0}'. Please check your syntax against the usage guide and try again.", filter);
+            Logger.ErrorFormat("The usage guide can also be found at https://github.com/OpenCover/opencover/wiki/Usage.");
+            throw new ExitApplicationWithoutReportingException();
         }
 
         /// <summary>
@@ -189,52 +194,77 @@ namespace OpenCover.Framework
         /// <param name="exclusionFilters">An array of filters that are used to wildcard match an attribute</param>
         public void AddAttributeExclusionFilters(string[] exclusionFilters)
         {
-            ExcludedAttributes.AddFilters(exclusionFilters, RegExFilters);
+            AddFilters(ExcludedAttributes, exclusionFilters, RegExFilters, "attribute");
         }
 
         /// <summary>
         /// Is this entity (method/type) excluded due to an attributeFilter
         /// </summary>
-        /// <param name="entity">The entity to test</param>
+        /// <param name="originalEntity">The entity to test</param>
         /// <returns></returns>
-        public bool ExcludeByAttribute(IMemberDefinition entity)
+        public bool ExcludeByAttribute(IMemberDefinition originalEntity)
         {
             if (ExcludedAttributes.Count == 0)
                 return false;
 
-            while (true)
+            var entity = originalEntity;
+            while (entity != null)
             {
-                if (entity == null)
-                    return false;
+                bool excludeByAttribute;
+                if (IsExcludedByAttributeSimple(entity, out excludeByAttribute))
+                    return excludeByAttribute;
 
-                if (ExcludeByAttribute((ICustomAttributeProvider)entity))
-                    return true;
-
-                if (ExcludeByAttribute(entity.DeclaringType))
-                    return true;
-
-                if (entity.DeclaringType == null || !entity.Name.StartsWith("<"))
-                    return false;
-
-                var match = Regex.Match(entity.Name, @"\<(?<name>.+)\>.+");
-                if (match.Groups["name"] == null) return false;
-                var name = match.Groups["name"].Value;
-                var target = entity.DeclaringType.Methods.FirstOrDefault(m => m.Name == name);
-                if (target == null) return false;
-                if (target.IsGetter)
-                {
-                    var getMethod = entity.DeclaringType.Properties.FirstOrDefault(p => p.GetMethod == target);
-                    entity = getMethod;
-                    continue;
-                }
-                if (target.IsSetter)
-                {
-                    var setMethod = entity.DeclaringType.Properties.FirstOrDefault(p => p.SetMethod == target);
-                    entity = setMethod;
-                    continue;
-                }
-                entity = target;
+                entity = GetDeclaringMethod(entity);
             }
+            return false;
+        }
+
+        /// <summary>
+        /// Look for the declaring method e.g. if method is some type of lambda, getter/setter etc
+        /// </summary>
+        /// <param name="entity"></param>
+        /// <returns></returns>
+        private static IMemberDefinition GetDeclaringMethod(IMemberDefinition entity)
+        {
+            MethodDefinition target;
+            if (!MatchDeclaringMethod(entity, out target))
+                return null;
+
+            if (target.IsGetter || target.IsSetter)
+            {
+                return entity.DeclaringType.Properties.FirstOrDefault(p => p.GetMethod == target || p.SetMethod == target);
+            }
+            return target;
+        }
+
+        private static bool MatchDeclaringMethod(IMemberDefinition entity, out MethodDefinition target)
+        {
+            target = null;
+            var match = Regex.Match(entity.Name, @"\<(?<name>.+)\>.+");
+            if (match.Groups["name"] == null)
+                return false;
+
+            var name = match.Groups["name"].Value;
+            target = entity.DeclaringType.Methods.FirstOrDefault(m => m.Name == name);
+            if (target == null)
+                return false;
+            return true;
+        }
+
+        private bool IsExcludedByAttributeSimple(IMemberDefinition entity, out bool excludeByAttribute)
+        {
+            excludeByAttribute = true;
+            if (ExcludeByAttribute((ICustomAttributeProvider) entity))
+                return true;
+
+            if (ExcludeByAttribute(entity.DeclaringType))
+                return true;
+
+            if (entity.DeclaringType != null && entity.Name.StartsWith("<")) 
+                return false;
+            
+            excludeByAttribute = false;
+            return true;
         }
 
         private bool ExcludeByAttribute(ICustomAttributeProvider entity)
@@ -252,10 +282,7 @@ namespace OpenCover.Framework
         /// <returns></returns>
         public bool ExcludeByAttribute(AssemblyDefinition entity)
         {
-            if (ExcludedAttributes.Count == 0)
-                return false;
-
-            return ExcludeByAttribute((ICustomAttributeProvider)entity);
+            return ExcludedAttributes.Count != 0 && ExcludeByAttribute((ICustomAttributeProvider)entity);
         }
 
         /// <summary>
@@ -277,7 +304,7 @@ namespace OpenCover.Framework
         /// <param name="exclusionFilters"></param>
         public void AddFileExclusionFilters(string[] exclusionFilters)
         {
-            ExcludedFiles.AddFilters(exclusionFilters, RegExFilters);
+            AddFilters(ExcludedFiles, exclusionFilters, RegExFilters, "file exclusion");
         }
 
         /// <summary>
@@ -299,7 +326,7 @@ namespace OpenCover.Framework
         /// <param name="testFilters"></param>
         public void AddTestFileFilters(string[] testFilters)
         {
-            TestFiles.AddFilters(testFilters, RegExFilters);
+            AddFilters(TestFiles, testFilters, RegExFilters, "test assembly");
         }
 
         /// <summary>
@@ -319,45 +346,57 @@ namespace OpenCover.Framework
         /// <summary>
         /// Should we instrument this asssembly
         /// </summary>
-        /// <param name="processPath"></param>
+        /// <param name="processName"></param>
         /// <returns></returns>
-        public bool InstrumentProcess(string processPath)
+        public bool InstrumentProcess(string processName)
         {
-            if (string.IsNullOrEmpty(processPath))
-            {
+            if (string.IsNullOrEmpty(processName))
                 return false;
-            }
-            if (!ExclusionFilters.Any() && !InclusionFilters.Any()) return true;
 
-            var processName = string.Empty;
-            if (processPath.IndexOfAny(Path.GetInvalidPathChars()) < 0) { // avoids ArgumentException
-                processName = Path.GetFileNameWithoutExtension(processPath);
-            }
-            if (ExclusionFilters.Any()) {
-                var matchingExclusionFilters = new List<AssemblyAndClassFilter>(ExclusionFilters.GetMatchingFiltersForProcessName(processPath));
-                if (!string.IsNullOrWhiteSpace (processName) && processName != processPath) {
-                	matchingExclusionFilters.AddRange(ExclusionFilters.GetMatchingFiltersForProcessName(processName));
-                }
-                if (matchingExclusionFilters.Any
-                        ( exclusionFilter =>
-                            // Excluded by all filters
-                            (exclusionFilter.AssemblyName == ".*" && exclusionFilter.ClassName == ".*")
-                        )
-                    )
-                {
-                    return false;
-                }
-            }
+            if (!ExclusionFilters.Any() && !InclusionFilters.Any()) 
+                return true;
 
-            if (InclusionFilters.Any()) {
-                var matchingInclusionFilters = new List<AssemblyAndClassFilter>(InclusionFilters.GetMatchingFiltersForProcessName(processPath));
-                if (!string.IsNullOrWhiteSpace (processName) && processName != processPath) {
-                    matchingInclusionFilters.AddRange(InclusionFilters.GetMatchingFiltersForProcessName(processName));
-                }
+            if (IsProcessExcluded(processName)) 
+                return false;
+
+            if (InclusionFilters.Any())
+            {
+                var matchingInclusionFilters = InclusionFilters.GetMatchingFiltersForProcessName(processName);
                 return matchingInclusionFilters.Any();
             }
 
             return true; // not excluded and no inclusion filters
+        }
+
+        private bool IsProcessExcluded(string processName)
+        {
+            if (!ExclusionFilters.Any()) 
+                return false;
+
+            var matchingExclusionFilters = ExclusionFilters.GetMatchingFiltersForProcessName(processName);
+            // Excluded by all filters
+            return matchingExclusionFilters.Any(exclusionFilter =>(exclusionFilter.AssemblyName == ".*" && exclusionFilter.ClassName == ".*"));
+        }
+
+        readonly IList<string> _excludePaths = new List<string>();
+
+        /// <summary>
+        /// Add a folder to the list that modules in these folders (and their children) should be excluded
+        /// </summary>
+        /// <param name="excludedPath"></param>
+        public void AddExcludedFolder(string excludedPath)
+        {
+            _excludePaths.Add(excludedPath.ToLowerInvariant());
+        }
+
+        /// <summary>
+        /// Should we use this module based on it's path
+        /// </summary>
+        /// <param name="modulePath"></param>
+        /// <returns></returns>
+        public bool UseModule(string modulePath)
+        {
+            return _excludePaths.All(path => !modulePath.ToLowerInvariant().StartsWith(path));
         }
 
         /// <summary>
@@ -398,8 +437,35 @@ namespace OpenCover.Framework
             filter.AddAttributeExclusionFilters(parser.AttributeExclusionFilters.ToArray());
             filter.AddFileExclusionFilters(parser.FileExclusionFilters.ToArray());
             filter.AddTestFileFilters(parser.TestFilters.ToArray());
+            foreach (var excludeDir in parser.ExcludeDirs)
+            {
+                filter.AddExcludedFolder(excludeDir);
+            }
+            
 
             return filter;
+        }
+
+        static void AddFilters(ICollection<RegexFilter> target, IEnumerable<string> filters, bool isRegexFilter, string filterType)
+        {
+            if (filters == null)
+                return;
+
+            foreach (var regexFilter in filters.Where(x => x != null).Select(filter => isRegexFilter ? new RegexFilter(filter, false) : new RegexFilter(ValidateAndEscape(filter, @"[]", filterType))))
+            {
+                target.Add(regexFilter);
+            }
+        }
+
+        static string ValidateAndEscape(string match, string notAllowed, string filterType)
+        {
+            if (match.IndexOfAny(notAllowed.ToCharArray()) >= 0)
+            {
+                Logger.ErrorFormat("The string '{0}' is invalid for a{2} '{1}' filter name", 
+                    match, filterType, "aeiou".Contains(filterType[0]) ? "n" : "");
+                HandleInvalidFilterFormat(match);
+            }
+            return match.Replace(@"\", @"\\").Replace(@".", @"\.").Replace(@"*", @".*");
         }
     }
 }
