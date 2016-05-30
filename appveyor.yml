@@ -38,6 +38,8 @@ artifacts:
   name: ZipArchive
 - path: main/bin/nugetpackage-rc/*.nupkg
   name: NugetCandidate
+- path: cov-int/build-log.txt
+  name: Coverity
 deploy:
 - provider: NuGet
   api_key:
