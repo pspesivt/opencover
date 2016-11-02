@@ -697,6 +697,14 @@ namespace OpenCover.Framework.Persistance
                 if (source.FileType == FileType.CSharp) 
                     sourceRepository.Add (file.UniqueId, source);
                 filesDictionary.Add(file.FullPath, file.UniqueId);
+
+                if (source.FilePath == file.FullPath)
+                {
+                    continue;
+                }
+
+                filesDictionary.Add(source.FilePath, file.UniqueId);
+                file.FullPath = source.FilePath;
             }
     
             foreach (var method in methods) {

@@ -62,8 +62,11 @@
   </target>
   
   <target name="create-release" depends="clean-all, build-environment, replace-drdump-token, build-release-platforms, test, test-cpp, create-zip-package">
+<!--
+    Chocolatey builds are failing, disabling
     <call target="chocolatey-package" />
     <call target="chocolatey-package-portable" />
+ -->
     <call target="nuget-package" />
     <call target="set-rc-property" />
     <call target="nuget-package" />

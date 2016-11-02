@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using OpenCover.Framework.Model;
 
@@ -258,6 +259,8 @@ namespace OpenCover.Framework.Utility
         /// <returns></returns>
         public static CodeCoverageStringTextSource GetSource(string filePath) {
 
+            UpdateSourceFilePathIfNotExists(ref filePath);
+
             var retSource = new CodeCoverageStringTextSource (null, filePath); // null indicates source-file not found
             try {
                 using (Stream stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
@@ -271,6 +274,65 @@ namespace OpenCover.Framework.Utility
             }
             return retSource;
         }
+
+        #region Probe local path for source code
+
+        private static string _lastSuccessfulProbePath = Directory.GetCurrentDirectory();
+        private static string _lastSuccessfulReplacedPath = Directory.GetCurrentDirectory();
+
+        private static void UpdateSourceFilePathIfNotExists(ref string filePath)
+        {
+            var sourceProbePaths = new[] { _lastSuccessfulProbePath };
+
+            if (System.IO.File.Exists(filePath))
+            {
+                return;
+            }
+
+            var probePathBasedOnLastSuccessful = filePath.Replace(_lastSuccessfulReplacedPath, _lastSuccessfulProbePath);
+
+            if (probePathBasedOnLastSuccessful != filePath && System.IO.File.Exists(probePathBasedOnLastSuccessful))
+            {
+                filePath = probePathBasedOnLastSuccessful;
+            }
+
+            var baseParts = filePath.Split('/', '\\');
+            for (var idx = 0; idx < baseParts.Length;)
+            {
+                var relPathParts = baseParts.Skip(idx++).ToArray();
+                if (relPathParts.Length == 0)
+                {
+                    break;
+                }
+
+                if (relPathParts[0].Contains(":"))
+                {
+                    continue;
+                }
+
+                var relativePathToSource = string.Join($"{Path.DirectorySeparatorChar}", relPathParts);
+                foreach (var probePath in sourceProbePaths)
+                {
+                    var fileProbePath = Path.Combine(probePath, relativePathToSource);
+                    if (!System.IO.File.Exists(fileProbePath))
+                    {
+                        continue;
+                    }
+
+                    _lastSuccessfulProbePath = probePath;
+                    _lastSuccessfulReplacedPath =
+                        filePath
+                        .Replace(relativePathToSource, string.Empty)
+                        .TrimEnd(Path.DirectorySeparatorChar);
+
+                    filePath = fileProbePath;
+
+                    return;
+                }
+            }
+        }
+
+        #endregion Probe local path for source code
 
     }
 }
